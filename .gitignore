@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.xlsx
+manual_batches.json
+.streamlit/secrets.toml
