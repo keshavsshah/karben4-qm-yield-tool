@@ -33,6 +33,16 @@ import theme
 STORE = sharepoint_store if sharepoint_store.is_configured() else workbook_store
 STORE_IS_CLOUD = STORE is sharepoint_store
 
+
+def _store_label():
+    """Safe label for UI. getattr-guarded so a stale hot-reloaded store module
+    (Streamlit Cloud can rerun app.py while keeping an old imported module cached)
+    can never brick the app on an attribute it doesn't have yet."""
+    try:
+        return STORE.store_label()
+    except Exception:
+        return "the tool's saved-data store"
+
 LAUTER_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Lauter_Checks_2.xlsx")
 YIELDS_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Brewery_Yields.xlsx")
 EMPTY_GRAIN_ROW = {"name": "", "weight_lb": 0.0, "cgdb_yield_pct": 80.0, "moisture_pct": 4.0, "mill_yield_class": "N"}
@@ -121,7 +131,7 @@ def _sidebar_store_status():
         count = f"**{n} batch{'' if n == 1 else 'es'} saved.**"
     except Exception as e:
         count = f"_(couldn't read the store: {e})_"
-    st.sidebar.caption(f"Hand-entered batches auto-save to {STORE.store_label()}. {count}")
+    st.sidebar.caption(f"Hand-entered batches auto-save to {_store_label()}. {count}")
     if STORE_IS_CLOUD:
         st.sidebar.caption(
             "✅ Stored in Karben4's SharePoint via Microsoft 365 — durable on this shared "
@@ -412,7 +422,7 @@ def page_add_batch(batches):
                   brew_date=str(brew_date) if brew_date else None,
                   grains=grains, lauter=lauter, brewhouse=brewhouse, cellar=cellar)
     STORE.save_batch(batch)
-    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}) → written to {STORE.store_label()}.")
+    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}) → written to {_store_label()}.")
 
     if grains and lauter:
         m = lauter_metrics(lauter, grains)
@@ -427,7 +437,7 @@ def page_add_batch(batches):
 
 def page_manage_manual():
     st.subheader("Manually-added batches")
-    st.caption(f"These live in the tool's durable store — {STORE.store_label()} — "
+    st.caption(f"These live in the tool's durable store — {_store_label()} — "
                "auto-saved on every add/edit/delete.")
     manual = STORE.load_batches()
     if not manual:
