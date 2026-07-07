@@ -3,6 +3,8 @@
 > The single-user **Python/Streamlit** brewery/lauter-yield tool for the Quality Manager.
 > Scope: [[projects/Karben4-Lauter-Yields-DOE/Process/Scope v2 — QM Yield Tool|Scope v2]] · math: [[projects/Karben4-Lauter-Yields-DOE/Process/06 Calculation Module — Formula Spec|Formula Spec]] · root: [[Karben4-Lauter-Yields-MOC]]
 
+> **📖 Just want to run it?** See **[SETUP.md](SETUP.md)** — a plain-English, step-by-step Windows install/run guide for the Quality Manager (durable local data). Or use the hosted link (no install, but data resets on restart): **https://karben4-qm-yield-tool.streamlit.app/**
+
 ## Why it exists
 A flexible, batch-actuals-driven replacement for the brewery's Excel/Solver yield workbooks. Handles the real **grain & hop variability** (any number of grain types/lots per batch — no rigid 3×3 slots), auto-fits parameters, and summarizes **trends for recipe formulation**. Brewers don't interact; the QM is the only user.
 
