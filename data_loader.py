@@ -136,10 +136,20 @@ def load_brewery_yields(path: str) -> dict:
     return out
 
 
-def load_batches(lauter_path: str, yields_path: str) -> dict:
-    """Joins both workbooks on Batch Number into a single {batch_number: Batch} map."""
-    batches = load_lauter_checks(lauter_path)
-    yields = load_brewery_yields(yields_path)
+def _readable(path) -> bool:
+    """True for an uploaded file-like object, or a string path that exists on disk."""
+    if path is None:
+        return False
+    return not isinstance(path, str) or os.path.exists(path)
+
+
+def load_batches(lauter_path, yields_path) -> dict:
+    """Joins both workbooks on Batch Number into a single {batch_number: Batch} map.
+    Either path may be None (or point to a nonexistent file) — a brewery with no
+    tracking workbooks yet (or only one of the two) still loads cleanly; callers rely
+    entirely on manually-entered batches (batch_store) in that case."""
+    batches = load_lauter_checks(lauter_path) if _readable(lauter_path) else {}
+    yields = load_brewery_yields(yields_path) if _readable(yields_path) else {}
     for batch_no, (bh, cl, beer) in yields.items():
         b = batches.get(batch_no)
         if b is None:

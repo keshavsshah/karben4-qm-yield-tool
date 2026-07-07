@@ -8,6 +8,7 @@ the QM manually transcribes them into paper brewlogs + Ekos.
 
 Run:  streamlit run app.py     (needs streamlit, pandas, openpyxl)
 """
+import io
 import math
 import os
 import altair as alt
@@ -77,8 +78,11 @@ def sidebar_sources():
     yields_file = st.sidebar.file_uploader("Brewery_Yields workbook (.xlsx)", type="xlsx", key="yields")
     lauter_path = lauter_file if lauter_file is not None else LAUTER_DEFAULT
     yields_path = yields_file if yields_file is not None else YIELDS_DEFAULT
-    st.sidebar.caption("Defaults to the workbooks in Inputs/ if nothing is uploaded. "
-                        "Batches added via the 'Add batch' tab are layered on top either way.")
+    st.sidebar.caption(
+        "**Optional.** New brewery, nothing to upload yet? Skip this and enter batches "
+        "by hand in **Add batch** — the tool computes everything itself, no spreadsheet "
+        "required. Upload/default workbooks (if present) are layered underneath manual batches."
+    )
     return lauter_path, yields_path
 
 
@@ -101,10 +105,18 @@ def beer_filter(df, key):
     return df[df["beer"].isin(pick)]
 
 
+def _df_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Batches", index=False)
+    return buf.getvalue()
+
+
 def page_data(df):
     st.subheader("Data")
     st.caption("One row per batch (Batch Number), joined from both workbooks plus anything added "
-               "by hand. Blank cells mean that stage's source data isn't available for this batch.")
+               "by hand. Blank cells mean that stage's source data isn't available for this batch. "
+               "Every value here is computed live by the tool — no Excel Solver or formulas involved.")
     sub = beer_filter(df, "data")
     if not sub.empty:
         st.dataframe(sub, use_container_width=True, column_config=column_config(sub), hide_index=True)
@@ -114,6 +126,17 @@ def page_data(df):
         f"{df['predicted_knockout_vol_bbl'].notna().sum()} with knockout, "
         f"{df['predicted_centrifuge_out_vol_bbl'].notna().sum()} with centrifuge-out."
     )
+    st.markdown("**Export this dataset** — every batch entered by hand or loaded from a workbook, "
+                 "with all computed metrics, as its own standalone file:")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"),
+                            file_name="qm_yield_data.csv", mime="text/csv", use_container_width=True)
+    with c2:
+        st.download_button("Download Excel (.xlsx)", _df_to_xlsx_bytes(df),
+                            file_name="qm_yield_data.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True)
 
 
 def page_trends(df):
