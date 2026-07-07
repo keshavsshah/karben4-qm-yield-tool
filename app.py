@@ -34,7 +34,22 @@ theme.apply()
 
 @st.cache_data
 def _load_workbooks(lauter_path, yields_path):
-    return load_batches(lauter_path, yields_path)
+    # Resilient by design: a missing/unreadable workbook (e.g. the Karben4 default
+    # paths don't exist on a fresh cloud deploy or another brewery's machine) must
+    # never brick the app — it just means "no workbook data", and the QM works off
+    # hand-entered batches instead. Guard here in app.py (which always hot-reloads)
+    # rather than relying only on data_loader, whose module can stay cached across
+    # a Streamlit Cloud hot-reload.
+    def _ok(p):
+        return p is not None and (not isinstance(p, str) or os.path.exists(p))
+    lp = lauter_path if _ok(lauter_path) else None
+    yp = yields_path if _ok(yields_path) else None
+    if lp is None and yp is None:
+        return {}
+    try:
+        return load_batches(lp, yp)
+    except Exception:
+        return {}
 
 
 def _load_all(lauter_path, yields_path):
@@ -103,6 +118,14 @@ def beer_filter(df, key):
         st.info("Pick a beer above, or check 'Show all batches'.")
         return df.iloc[0:0]
     return df[df["beer"].isin(pick)]
+
+
+def _needs_first_batch():
+    st.info(
+        "**No batch data yet.** This tab shows trends and metrics computed from your batches — "
+        "add your first one in the **Add batch** tab (or upload an existing workbook in the sidebar) "
+        "and it'll populate here. The tool does all the math itself; no spreadsheet is required to start."
+    )
 
 
 def _df_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
@@ -593,8 +616,8 @@ def main():
         batches = _load_all(lauter_path, yields_path)
         df = batch_dataframe(batches, const)
     except Exception as e:
-        st.error(f"Couldn't load the workbooks: {e}")
-        return
+        st.warning(f"Couldn't load workbook data ({e}) — you can still enter batches by hand in **Add batch**.")
+        batches, df = {}, batch_dataframe({}, const)
 
     tabs = st.tabs(["Add batch", "Model", "Trends", "Levers", "By beer", "Re-fit", "Transcription card",
                      "Manage manual batches", "Data"])
@@ -602,20 +625,44 @@ def main():
         page_add_batch(batches)
     with tabs[1]:
         page_model(batches)
+    # Trends/Levers/By beer/Re-fit/Transcription/Data all read the computed dataframe.
+    # A brand-new brewery (no workbooks, no batches yet) has an empty df with no columns —
+    # show a friendly onboarding notice instead of letting those pages KeyError on it.
+    # NOTE: use explicit if/else, not a bare ternary expression — Streamlit's "magic"
+    # auto-displays any bare expression statement, which would render the ternary's
+    # None result as a literal "None" on screen.
     with tabs[2]:
-        page_trends(df)
+        if not df.empty:
+            page_trends(df)
+        else:
+            _needs_first_batch()
     with tabs[3]:
-        page_levers(df)
+        if not df.empty:
+            page_levers(df)
+        else:
+            _needs_first_batch()
     with tabs[4]:
-        page_by_beer(df)
+        if not df.empty:
+            page_by_beer(df)
+        else:
+            _needs_first_batch()
     with tabs[5]:
-        page_refit(df, batches)
+        if not df.empty:
+            page_refit(df, batches)
+        else:
+            _needs_first_batch()
     with tabs[6]:
-        page_transcription(df)
+        if not df.empty:
+            page_transcription(df)
+        else:
+            _needs_first_batch()
     with tabs[7]:
         page_manage_manual()
     with tabs[8]:
-        page_data(df)
+        if not df.empty:
+            page_data(df)
+        else:
+            _needs_first_batch()
 
 
 if __name__ == "__main__":
