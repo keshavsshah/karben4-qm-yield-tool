@@ -21,9 +21,17 @@ from engine import GrainItem, LauterInputs, SugarAdditions, BrewhouseInputs, Cel
 from analysis import batch_dataframe, refit_dataframe
 from autofit import fit_all, DEFAULT_RETENTION_PCT
 import workbook_store
+import sharepoint_store
 from workbook_store import WORKBOOK_PATH
 from display import column_config
 import theme
+
+# Durable batch store for hand-entered batches. Uses SharePoint (durable on ANY host,
+# including the shared Streamlit Cloud URL) when Microsoft 365 creds are configured;
+# otherwise a local brewery_data.xlsx (durable only when the app runs on a real disk).
+# Both expose the same load_batches / save_batch / delete_batch / store_label interface.
+STORE = sharepoint_store if sharepoint_store.is_configured() else workbook_store
+STORE_IS_CLOUD = STORE is sharepoint_store
 
 LAUTER_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Lauter_Checks_2.xlsx")
 YIELDS_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Brewery_Yields.xlsx")
@@ -59,7 +67,7 @@ def _load_all(lauter_path, yields_path):
     the store is a small local xlsx read, cheap enough to re-read every rerun so a
     just-saved batch shows up immediately."""
     batches = dict(_load_workbooks(lauter_path, yields_path))
-    batches.update(workbook_store.load_batches())
+    batches.update(STORE.load_batches())
     return batches
 
 
@@ -109,19 +117,22 @@ def _sidebar_store_status():
     st.sidebar.divider()
     st.sidebar.subheader("Your saved data")
     try:
-        n = len(workbook_store.load_batches())
-    except Exception:
-        n = 0
-    exists = os.path.exists(WORKBOOK_PATH)
-    st.sidebar.caption(
-        f"Hand-entered batches auto-save to **`{os.path.basename(WORKBOOK_PATH)}`** "
-        f"(next to the app). {'**' + str(n) + ' batch' + ('' if n == 1 else 'es') + ' saved.**' if exists else 'Created on your first save.'}"
-    )
-    st.sidebar.caption(
-        "⚠️ Durable only when you run the app on your own computer. On a hosted "
-        "(Streamlit Cloud) link this file resets when the server restarts — export "
-        "from the **Data** tab there for a permanent copy."
-    )
+        n = len(STORE.load_batches())
+        count = f"**{n} batch{'' if n == 1 else 'es'} saved.**"
+    except Exception as e:
+        count = f"_(couldn't read the store: {e})_"
+    st.sidebar.caption(f"Hand-entered batches auto-save to {STORE.store_label()}. {count}")
+    if STORE_IS_CLOUD:
+        st.sidebar.caption(
+            "✅ Stored in Karben4's SharePoint via Microsoft 365 — durable on this shared "
+            "link and openable in Excel Online."
+        )
+    else:
+        st.sidebar.caption(
+            "⚠️ Durable only when you run the app on your own computer. On a hosted "
+            "(Streamlit Cloud) link this file resets when the server restarts — export "
+            "from the **Data** tab there for a permanent copy, or configure SharePoint."
+        )
 
 
 def beer_filter(df, key):
@@ -400,9 +411,8 @@ def page_add_batch(batches):
     batch = Batch(batch_number=batch_number, beer=beer or None,
                   brew_date=str(brew_date) if brew_date else None,
                   grains=grains, lauter=lauter, brewhouse=brewhouse, cellar=cellar)
-    workbook_store.save_batch(batch)
-    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}) → written to "
-               f"`{os.path.basename(WORKBOOK_PATH)}`.")
+    STORE.save_batch(batch)
+    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}) → written to {STORE.store_label()}.")
 
     if grains and lauter:
         m = lauter_metrics(lauter, grains)
@@ -417,9 +427,9 @@ def page_add_batch(batches):
 
 def page_manage_manual():
     st.subheader("Manually-added batches")
-    st.caption(f"These live in the tool's durable store, **`{os.path.basename(WORKBOOK_PATH)}`**, "
-               "next to this script — auto-saved on every add/edit/delete.")
-    manual = workbook_store.load_batches()
+    st.caption(f"These live in the tool's durable store — {STORE.store_label()} — "
+               "auto-saved on every add/edit/delete.")
+    manual = STORE.load_batches()
     if not manual:
         st.info("None yet — add one in the 'Add batch' tab.")
         return
@@ -429,7 +439,7 @@ def page_manage_manual():
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     to_delete = st.selectbox("Delete a batch", [None] + list(manual.keys()))
     if to_delete and st.button(f"Delete batch {to_delete}", type="primary"):
-        workbook_store.delete_batch(to_delete)
+        STORE.delete_batch(to_delete)
         # The table/dropdown above were already built from the pre-delete list this run,
         # so (unlike page_add_batch) this DOES need a rerun to refresh them. st.success()
         # would get wiped by that immediate rerun before it's shown — st.toast() is built

@@ -128,8 +128,10 @@ def _row_to_batch(row: dict, grain_rows: list) -> Batch:
                  grains=grains, lauter=lauter, brewhouse=brewhouse, cellar=cellar)
 
 
-# --- workbook read / write ---------------------------------------------------
-def _write_all(batches: dict, path: str = WORKBOOK_PATH):
+# --- workbook <-> batches (shared by the local + SharePoint stores) ----------
+def batches_to_workbook(batches: dict) -> "openpyxl.Workbook":
+    """Build an in-memory workbook (Batches + Grains sheets) from {num: Batch}.
+    Shared by _write_all (local disk) and sharepoint_store (Graph upload)."""
     wb = openpyxl.Workbook()
     bs = wb.active
     bs.title = "Batches"
@@ -147,21 +149,15 @@ def _write_all(batches: dict, path: str = WORKBOOK_PATH):
         for col in ws.columns:
             width = max((len(str(c.value)) for c in col if c.value is not None), default=10)
             ws.column_dimensions[col[0].column_letter].width = min(max(width + 2, 10), 32)
-    tmp = path + ".tmp"
-    wb.save(tmp)
-    os.replace(tmp, path)   # atomic-ish: never leave a half-written file
+    return wb
 
 
-def load_batches(path: str = WORKBOOK_PATH) -> dict:
-    """{batch_number: Batch} read back from the workbook. Empty if it doesn't exist
-    (first run). Migrates a legacy manual_batches.json in on first use."""
-    if not os.path.exists(path):
-        migrated = _migrate_legacy_json(path)
-        if not migrated:
-            return {}
-    wb = openpyxl.load_workbook(path, data_only=True)
-    bs = wb["Batches"]
-    rows = list(bs.iter_rows(values_only=True))
+def workbook_to_batches(wb: "openpyxl.Workbook") -> dict:
+    """Parse an in-memory workbook (Batches + Grains sheets) -> {num: Batch}.
+    Shared by load_batches (local disk) and sharepoint_store (Graph download)."""
+    if "Batches" not in wb.sheetnames:
+        return {}
+    rows = list(wb["Batches"].iter_rows(values_only=True))
     if not rows:
         return {}
     headers = list(rows[0])
@@ -185,6 +181,30 @@ def load_batches(path: str = WORKBOOK_PATH) -> dict:
             continue
         out[bid] = _row_to_batch(row, grain_by_batch.get(bid, []))
     return out
+
+
+# --- local-disk read / write -------------------------------------------------
+def _write_all(batches: dict, path: str = WORKBOOK_PATH):
+    wb = batches_to_workbook(batches)
+    tmp = path + ".tmp"
+    wb.save(tmp)
+    os.replace(tmp, path)   # atomic-ish: never leave a half-written file
+
+
+def load_batches(path: str = WORKBOOK_PATH) -> dict:
+    """{batch_number: Batch} read back from the workbook. Empty if it doesn't exist
+    (first run). Migrates a legacy manual_batches.json in on first use."""
+    if not os.path.exists(path):
+        migrated = _migrate_legacy_json(path)
+        if not migrated:
+            return {}
+    wb = openpyxl.load_workbook(path, data_only=True)
+    return workbook_to_batches(wb)
+
+
+def store_label() -> str:
+    """Human label for the sidebar 'Your saved data' status."""
+    return f"`{os.path.basename(WORKBOOK_PATH)}` (next to the app)"
 
 
 def save_batch(batch: Batch, path: str = WORKBOOK_PATH):
