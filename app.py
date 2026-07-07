@@ -21,12 +21,14 @@ from analysis import batch_dataframe, refit_dataframe
 from autofit import fit_all, DEFAULT_RETENTION_PCT
 from batch_store import load_manual_batches, save_manual_batch, delete_manual_batch
 from display import column_config
+import theme
 
 LAUTER_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Lauter_Checks_2.xlsx")
 YIELDS_DEFAULT = os.path.join(os.path.dirname(__file__), "..", "..", "Inputs", "Brewery_Yields.xlsx")
 EMPTY_GRAIN_ROW = {"name": "", "weight_lb": 0.0, "cgdb_yield_pct": 80.0, "moisture_pct": 4.0, "mill_yield_class": "N"}
 
 st.set_page_config(page_title="Karben4 QM Yield Tool", layout="wide")
+theme.apply()
 
 
 @st.cache_data
@@ -559,6 +561,7 @@ def page_model(batches: dict):
 
 def main():
     st.title("Karben4 QM Yield Tool")
+    st.markdown(theme.HEX_RULE_HTML, unsafe_allow_html=True)
     st.caption("Single-user analysis tool for the Quality Manager (Scope v2, 2026-06-24). "
                "Brewers don't use this — results are read here, then transcribed by hand into paper brewlogs + Ekos.")
     lauter_path, yields_path = sidebar_sources()
