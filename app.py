@@ -20,7 +20,8 @@ from data_loader import load_batches, Batch
 from engine import GrainItem, LauterInputs, SugarAdditions, BrewhouseInputs, CellarInputs, lauter_metrics, Constants
 from analysis import batch_dataframe, refit_dataframe
 from autofit import fit_all, DEFAULT_RETENTION_PCT
-from batch_store import load_manual_batches, save_manual_batch, delete_manual_batch
+import workbook_store
+from workbook_store import WORKBOOK_PATH
 from display import column_config
 import theme
 
@@ -53,11 +54,12 @@ def _load_workbooks(lauter_path, yields_path):
 
 
 def _load_all(lauter_path, yields_path):
-    """Workbook batches + manually-added ones layered on top (manual wins on a shared
-    Batch Number). Not cached — manual batches are a small local JSON read, cheap
-    enough to re-read every rerun so a just-added batch shows up immediately."""
+    """Uploaded/default workbook batches + the tool's own durable workbook store
+    layered on top (a hand-entered batch wins on a shared Batch Number). Not cached —
+    the store is a small local xlsx read, cheap enough to re-read every rerun so a
+    just-saved batch shows up immediately."""
     batches = dict(_load_workbooks(lauter_path, yields_path))
-    batches.update(load_manual_batches())
+    batches.update(workbook_store.load_batches())
     return batches
 
 
@@ -98,7 +100,28 @@ def sidebar_sources():
         "by hand in **Add batch** — the tool computes everything itself, no spreadsheet "
         "required. Upload/default workbooks (if present) are layered underneath manual batches."
     )
+    _sidebar_store_status()
     return lauter_path, yields_path
+
+
+def _sidebar_store_status():
+    """Show where hand-entered batches are durably saved, and how many there are."""
+    st.sidebar.divider()
+    st.sidebar.subheader("Your saved data")
+    try:
+        n = len(workbook_store.load_batches())
+    except Exception:
+        n = 0
+    exists = os.path.exists(WORKBOOK_PATH)
+    st.sidebar.caption(
+        f"Hand-entered batches auto-save to **`{os.path.basename(WORKBOOK_PATH)}`** "
+        f"(next to the app). {'**' + str(n) + ' batch' + ('' if n == 1 else 'es') + ' saved.**' if exists else 'Created on your first save.'}"
+    )
+    st.sidebar.caption(
+        "⚠️ Durable only when you run the app on your own computer. On a hosted "
+        "(Streamlit Cloud) link this file resets when the server restarts — export "
+        "from the **Data** tab there for a permanent copy."
+    )
 
 
 def beer_filter(df, key):
@@ -270,9 +293,10 @@ def page_transcription(df):
 
 def page_add_batch(batches):
     st.subheader("Add batch")
-    st.caption("Type in a batch's numbers — before or without it ever landing in the Excel workbooks. "
-               "Saved locally (manual_batches.json next to this script) and shows up everywhere else "
-               "in the app immediately. A batch number that matches a workbook batch overrides it here.")
+    st.caption("Type in a batch's numbers — before or without it ever landing in a spreadsheet. "
+               "**Saving auto-writes it to `brewery_data.xlsx` next to this script** (created on the first "
+               "save, updated on every change) and it shows up everywhere else in the app immediately. "
+               "A batch number that matches an uploaded-workbook batch overrides it here.")
 
     existing_beers = sorted({b.beer for b in batches.values() if b.beer})
     NEW_BEER_OPTION = "+ Add new beer..."
@@ -376,8 +400,9 @@ def page_add_batch(batches):
     batch = Batch(batch_number=batch_number, beer=beer or None,
                   brew_date=str(brew_date) if brew_date else None,
                   grains=grains, lauter=lauter, brewhouse=brewhouse, cellar=cellar)
-    save_manual_batch(batch)
-    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}).")
+    workbook_store.save_batch(batch)
+    st.success(f"Saved batch {batch_number} ({beer or 'no beer name'}) → written to "
+               f"`{os.path.basename(WORKBOOK_PATH)}`.")
 
     if grains and lauter:
         m = lauter_metrics(lauter, grains)
@@ -392,7 +417,9 @@ def page_add_batch(batches):
 
 def page_manage_manual():
     st.subheader("Manually-added batches")
-    manual = load_manual_batches()
+    st.caption(f"These live in the tool's durable store, **`{os.path.basename(WORKBOOK_PATH)}`**, "
+               "next to this script — auto-saved on every add/edit/delete.")
+    manual = workbook_store.load_batches()
     if not manual:
         st.info("None yet — add one in the 'Add batch' tab.")
         return
@@ -402,7 +429,7 @@ def page_manage_manual():
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     to_delete = st.selectbox("Delete a batch", [None] + list(manual.keys()))
     if to_delete and st.button(f"Delete batch {to_delete}", type="primary"):
-        delete_manual_batch(to_delete)
+        workbook_store.delete_batch(to_delete)
         # The table/dropdown above were already built from the pre-delete list this run,
         # so (unlike page_add_batch) this DOES need a rerun to refresh them. st.success()
         # would get wiped by that immediate rerun before it's shown — st.toast() is built
