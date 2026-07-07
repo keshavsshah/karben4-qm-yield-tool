@@ -20,6 +20,7 @@ A flexible, batch-actuals-driven replacement for the brewery's Excel/Solver yiel
 - [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/requirements.txt|requirements.txt]] — pinned Python deps for Docker / Streamlit Community Cloud.
 - [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/onedrive.py|onedrive.py]] — optional Microsoft Graph / OneDrive-SharePoint auto-fetch of the two source workbooks (env vars or Streamlit Cloud secrets); not required for local use.
 - [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/theme.py|theme.py]] — Karben4 brand theme (2026-07-07): navy/green/gold colors + Bebas Neue/Mulish/Exo fonts pulled live from karben4.com, applied via `st.markdown` CSS injection + `.streamlit/config.toml` (native widget theming for sliders/checkboxes/links). `app.py` calls `theme.apply()` right after `st.set_page_config()`.
+- [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/make_example_template.py|make_example_template.py]] — generates the blank, brewery-agnostic upload templates in `templates/` (headers + one dummy "Example Pale Ale" batch, no proprietary data). Regenerate with `python make_example_template.py`. Output: [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/templates/Lauter_Checks_TEMPLATE.xlsx|Lauter_Checks_TEMPLATE.xlsx]] + [[projects/Karben4-Lauter-Yields-DOE/Process/qm_yield_tool/templates/Brewery_Yields_TEMPLATE.xlsx|Brewery_Yields_TEMPLATE.xlsx]]. See **How a new brewery uses this** below.
 
 ## Status (2026-06-30)
 - ✅ **Increment 1: engine + test passing at ≤2.3e-9** across 15 beers / 66 grain lines (avg 4.4 grains/beer). Constants pulled from the data (Background tab), not hardcoded.
@@ -36,7 +37,25 @@ A flexible, batch-actuals-driven replacement for the brewery's Excel/Solver yiel
   - **Known rough edge:** filling the grain-bill `st.data_editor` via fast scripted clicks is finicky — number cells sometimes don't commit before a sibling widget's value gets included in the same script rerun (a controlled-input/automation-timing quirk, not a logic bug; a full successful manual save with grain bill + lauter + correct values was confirmed working end-to-end). A human clicking at normal speed shouldn't hit this.
 
 ## New-brewery mode (2026-07-07)
-The two Karben4 workbooks are now fully **optional**. A brewery with no existing tracking spreadsheets can use the tool from zero: skip the sidebar uploads, enter batches by hand in **Add batch**, and every downstream tab (Trends/Levers/Re-fit/Data) works off manual batches alone — `data_loader.load_batches()` treats a missing/absent workbook path as an empty source instead of raising. All calculations (lauter/extract chain, volume cascade, runoff-curve auto-fit) already ran entirely in `engine.py`/`autofit.py`, not Excel — no Solver step exists anywhere in the tool. New: the **Data** tab now has **Download CSV** / **Download Excel (.xlsx)** buttons so a brewery's own entered-and-computed dataset can be exported as its own standalone spreadsheet (their new source of truth), instead of the tool requiring a spreadsheet as input.
+The two Karben4 workbooks are now fully **optional**. A brewery with no existing tracking spreadsheets can use the tool from zero: skip the sidebar uploads, enter batches by hand in **Add batch**, and every downstream tab (Trends/Levers/Re-fit/Data) works off manual batches alone — `data_loader.load_batches()` treats a missing/absent workbook path as an empty source instead of raising. All calculations (lauter/extract chain, volume cascade, runoff-curve auto-fit) run entirely in `engine.py`/`autofit.py`, not Excel — **there is no Solver step anywhere in the tool**. The **Data** tab has **Download CSV** / **Download Excel (.xlsx)** buttons so a brewery's own entered-and-computed dataset exports as its own standalone spreadsheet (their new source of truth), instead of the tool requiring a spreadsheet as input.
+
+### How a new brewery uses this
+No proprietary Karben4 data is needed — nothing here is beer-recipe- or brewery-specific. Two ways in:
+
+**A) Type batches straight into the app (recommended — no spreadsheet at all).**
+1. Open the app (live URL, or `streamlit run app.py`). Leave the sidebar **Upload** boxes empty.
+2. Go to **Add batch**. Add a beer, then enter that batch's numbers: strike water temp/volume, lauter runoff volume + extract (°P), and a grain bill (add one row per grain — any number of grains). Optionally tick **knockout** and **cellar** to add those stages too.
+3. **Save batch.** The tool computes lauter loading, brewhouse efficiency, the volume cascade, and the auto-fitted runoff curve immediately — it appears in **Trends / Levers / Re-fit / Data** right away.
+4. Repeat per batch. When you want a portable copy of everything, use **Data → Download Excel/CSV** — that file is yours, with every computed metric, and needs no formulas to stay correct.
+   - ⚠️ On the hosted (Streamlit Cloud) app, hand-entered batches live in a local `manual_batches.json` that resets when the server restarts. For durable records, **export from the Data tab** after entering batches (or run the app locally). A real datastore is a future option (see next steps).
+
+**B) Fill in the example spreadsheet templates, then upload them.**
+If you'd rather batch-enter in a spreadsheet, use the blank templates under [`templates/`](templates/) — all the headers a batch needs, one clearly-marked **Example Pale Ale** batch of dummy round numbers (highlighted gold), and **zero Karben4 data**:
+   - [`templates/Lauter_Checks_TEMPLATE.xlsx`](templates/Lauter_Checks_TEMPLATE.xlsx) — **one tab per batch**, tab name = beer name. Column B holds the batch's strike/lauter numbers; grains go one-per-column (B, C, D…). Copy the example tab for each new batch.
+   - [`templates/Brewery_Yields_TEMPLATE.xlsx`](templates/Brewery_Yields_TEMPLATE.xlsx) — **Brewhouse** + **Cellar** tabs, **one column per batch** (B, C, D…). Brewhouse = hops/sugars + kettle runoff + end-of-boil °P; Cellar = FV/OG/dry-hops + optional centrifuge/BT/packaged volumes.
+   - Then upload both via the sidebar **Upload** buttons. (Regenerate the templates anytime with `python make_example_template.py`.)
+
+Path (A) is far less fiddly — the templates keep Karben4's original cell-positional layout so a single loader serves both, which means the row positions matter. New breweries should prefer typing into **Add batch** unless they already keep data in a spreadsheet.
 
 ## Possible next steps (not yet scoped — none of these are committed)
 - Backfill or wait for batches with lauter + knockout + cellar data all three (today: 0 of 72) so cross-stage trends (loading/thickness → final packaged yield) become possible.
