@@ -5,6 +5,10 @@
 Summer 2026 · Quality Engineering internship at [Karben4 Brewing](https://karben4.com), Madison WI
 · Keshav Shah ([LinkedIn](https://www.linkedin.com/in/keshavsshah/))
 
+![The QM Yield Tool — batch entry screen](docs/qm-yield-tool.png)
+
+*Batch entry. The tabs across the top are the rest of the tool: model fit, trends, sensitivity levers, per-beer breakdowns, re-fitting, and a transcription card for the brewery's paper logs.*
+
 ---
 
 ## What this project was
